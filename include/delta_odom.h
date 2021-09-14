@@ -24,6 +24,7 @@ namespace delta_odom{
         ros::NodeHandle nh_;
         ros::Publisher true_odom_publisher;
         ros::Publisher noisy_odom_publisher;
+        ros::Publisher integrated_odom_publisher;
 
         ros::Subscriber pose_stamped_subs_;
         ros::Subscriber nav_odom_subs_;
@@ -38,6 +39,7 @@ namespace delta_odom{
         bool initialized_;
         bool verbose_;
         bool add_noise_;
+        bool verify_implementation;
 
         double DT;
         double yaw;
@@ -47,6 +49,7 @@ namespace delta_odom{
         double yaw_threshold;
 
         Eigen::Affine3d optitrack_to_preivous_pose;
+        Eigen::Affine3d current_pose;
         Eigen::Vector3d noise_vector;
 
         int rand_numb;

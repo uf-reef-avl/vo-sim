@@ -4,6 +4,8 @@
 
 #include "../include/delta_odom.h"
 
+#define DBG(msg, ...) { if (verbose_) ROS_WARN_STREAM((msg), ##__VA_ARGS__);}
+
 namespace delta_odom{
 
     deltaOdom::deltaOdom():
@@ -18,6 +20,10 @@ namespace delta_odom{
         nh_private_.param<double>("update_rate", rate, 100);
         nh_private_.param<double>("position_threshold", position_threshold, 0.25);
         nh_private_.param<double>("yaw_threshold", yaw_threshold, 0.1);
+        nh_private_.param<bool>("verify_implementation", verify_implementation, false);
+
+        if(verify_implementation)
+            integrated_odom_publisher = nh_.advertise<geometry_msgs::PoseStamped>("integrated_odom",1);
 
         distribution =  std::normal_distribution<>(0,mocap_noise_std);
         rand_numb = rand() % 100;
@@ -39,6 +45,11 @@ namespace delta_odom{
     void deltaOdom::truth_callback(const geometry_msgs::PoseStampedConstPtr &msg) {
         Eigen::Affine3d pose_msg;
         tf2::fromMsg(msg->pose, pose_msg);
+
+        if(verify_implementation){
+            if(!initialized_)
+                current_pose = pose_msg;
+        }
 
         process_msg(pose_msg, msg->header);
     }
@@ -75,7 +86,7 @@ namespace delta_odom{
         DT = header.stamp.toSec() - previous_time;
 
         if(delta_position >= position_threshold || delta_yaw >= yaw_threshold || DT >= 1/rate){
-            ROS_WARN_STREAM("Reset Odom");
+            DBG("Reset Odom");
 
             previous_time = header.stamp.toSec();
             optitrack_to_preivous_pose = optitrack_to_current_pose;
@@ -89,6 +100,14 @@ namespace delta_odom{
 //            Eigen::Matrix<double, 3, 1> ea;
 //            ea << 0,0,delta_yaw;
 //            true_delta.pose.orientation = reef_msgs::fromEulerAngleToQuaternion<Eigen::Matrix<double, 3, 1>, geometry_msgs::Quaternion> (ea, "321");
+            if(verify_implementation){
+                Eigen::Affine3d temp;
+                temp = current_pose * delta_pose_odom;
+                current_pose = temp;
+                geometry_msgs::PoseStamped verify_msg;
+                verify_msg.pose = tf2::toMsg(current_pose);
+                integrated_odom_publisher.publish(verify_msg);
+            }
 
             if(add_noise_){
                 true_delta.pose.position.x += distribution(engine);
@@ -98,4 +117,12 @@ namespace delta_odom{
         }
 
     }
+}
+
+int main(int argc, char **argv){
+
+    ros::init(argc, argv, "delta_odom_node");
+    delta_odom::deltaOdom object;
+    ros::spin();
+    return 0;
 }
