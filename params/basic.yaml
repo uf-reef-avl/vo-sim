@@ -1,0 +1,6 @@
+convert_to_ned: False
+add_noise: False
+mocap_noise_std: 0.01
+update_rate: 20
+yaw_threshold: rad(10)
+position_threshold: 0.25

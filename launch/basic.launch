@@ -1,0 +1,5 @@
+<launch>
+    <node name="delta_odom" pkg="delta_odom" type="node" output="screen" >
+        <rosparam command="load" file="$(find delta_odom)/params/basic.yaml" />
+    </node>
+</launch>
