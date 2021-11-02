@@ -11,16 +11,19 @@ namespace delta_odom{
     deltaOdom::deltaOdom():
     nh_(),
     nh_private_("~"),
-    initialized_(false)
+    initialized_(false),
+    keyframe_now(false)
     {
         nh_private_.param<bool>("convert_to_ned", convert_to_ned_, false );
         nh_private_.param<bool>("verbose", verbose_, false );
         nh_private_.param<bool>("add_noise", add_noise_, false );
         nh_private_.param<double>("mocap_noise_std", mocap_noise_std, 0.001);
-        nh_private_.param<double>("update_rate", rate, 100);
+        nh_private_.param<double>("update_rate", rate, 20);
         nh_private_.param<double>("position_threshold", position_threshold, 0.25);
         nh_private_.param<double>("yaw_threshold", yaw_threshold, 0.1);
         nh_private_.param<bool>("verify_implementation", verify_implementation, false);
+
+        reef_msgs::loadTransform("body_to_camera",body_to_camera);
 
         if(verify_implementation)
             integrated_odom_publisher = nh_.advertise<geometry_msgs::PoseStamped>("integrated_odom",1);
@@ -29,17 +32,26 @@ namespace delta_odom{
         rand_numb = rand() % 100;
         std::mt19937 engine(rand_numb);
 
+        std::string initialize_node_topic;
+        nh_private_.param<std::string>("initialize_node_topic", initialize_node_topic);
+        std_msgs::Empty::ConstPtr initialize_node = ros::topic::waitForMessage<std_msgs::Empty>(initialize_node_topic, nh_);
 
         pose_stamped_subs_ = nh_.subscribe<geometry_msgs::PoseStamped>("pose_stamped",1 , &deltaOdom::truth_callback, this);
         nav_odom_subs_ = nh_.subscribe<nav_msgs::Odometry>("odom",1 , &deltaOdom::odom_callback, this);
         transform_stamped_subs_ = nh_.subscribe<geometry_msgs::TransformStamped>("transform_stamped",1 , &deltaOdom::transform_callback, this);
+        keyframe_subs_ = nh_.subscribe<std_msgs::Empty>("keyframe_now",1, &deltaOdom::keyframeCallback, this);
 
-        true_odom_publisher = nh_.advertise<geometry_msgs::PoseStamped>("true_odom",1);
-        noisy_odom_publisher = nh_.advertise<geometry_msgs::PoseStamped>("noisy_odom",1);
+        true_odom_publisher = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("true_odom",1);
+        noisy_odom_publisher = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("noisy_odom",1);
+        altimeter_publisher_ = nh_.advertise<sensor_msgs::Range>("altimeter", 1);
     }
 
     deltaOdom::~deltaOdom() {
 
+    }
+
+    void deltaOdom::keyframeCallback(const std_msgs::EmptyConstPtr &msg) {
+        keyframe_now = true;
     }
 
     void deltaOdom::truth_callback(const geometry_msgs::PoseStampedConstPtr &msg) {
@@ -76,46 +88,49 @@ namespace delta_odom{
             return;
         }
 
-        Eigen::Affine3d delta_pose_odom;
+        Eigen::Affine3d delta_pose_odom_optitrack_frame;
+        Eigen::Affine3d delta_pose_odom_camera_frame;
 
-        delta_pose_odom = optitrack_to_preivous_pose.inverse() * optitrack_to_current_pose;
+        sensor_msgs::Range alt_msg;
+        alt_msg.header = header;
+        alt_msg.range = optitrack_to_current_pose.translation().z();
 
-        double delta_position = delta_pose_odom.translation().norm();
-        double delta_yaw;
-        reef_msgs::get_yaw(delta_pose_odom.linear().transpose(), delta_yaw);
+        delta_pose_odom_optitrack_frame= optitrack_to_preivous_pose.inverse() * optitrack_to_current_pose;
+        delta_pose_odom_camera_frame = body_to_camera.inverse() * delta_pose_odom_optitrack_frame * body_to_camera;
         DT = header.stamp.toSec() - previous_time;
 
-        if(delta_position >= position_threshold || delta_yaw >= yaw_threshold || DT >= 1/rate){
+        if(keyframe_now){
             DBG("Reset Odom");
 
-            previous_time = header.stamp.toSec();
             optitrack_to_preivous_pose = optitrack_to_current_pose;
+            keyframe_now = false;
 
-            geometry_msgs::PoseStamped true_delta;
-            true_delta.header = header;
-            true_delta.pose = tf2::toMsg(delta_pose_odom);
-            true_delta.pose.position.z = 0;
-            true_odom_publisher.publish(true_delta);
-
-//            Eigen::Matrix<double, 3, 1> ea;
-//            ea << 0,0,delta_yaw;
-//            true_delta.pose.orientation = reef_msgs::fromEulerAngleToQuaternion<Eigen::Matrix<double, 3, 1>, geometry_msgs::Quaternion> (ea, "321");
             if(verify_implementation){
                 Eigen::Affine3d temp;
-                temp = current_pose * delta_pose_odom;
+                temp = current_pose * delta_pose_odom_optitrack_frame;
                 current_pose = temp;
                 geometry_msgs::PoseStamped verify_msg;
                 verify_msg.pose = tf2::toMsg(current_pose);
                 integrated_odom_publisher.publish(verify_msg);
             }
+        }
+        // Publish the delta_odom value w.r.t keyframe
+        if(DT>1/rate) {
+            geometry_msgs::PoseWithCovarianceStamped true_delta;
+            true_delta.header = header;
+            true_delta.pose.pose = tf2::toMsg(delta_pose_odom_camera_frame);
+            //TODO: Add covariance
+            true_odom_publisher.publish(true_delta);
 
-            if(add_noise_){
-                true_delta.pose.position.x += distribution(engine);
-                true_delta.pose.position.y += distribution(engine);
+            if (add_noise_) {
+                true_delta.pose.pose.position.x += distribution(engine);
+                true_delta.pose.pose.position.y += distribution(engine);
+                alt_msg.range += distribution(engine);
                 noisy_odom_publisher.publish(true_delta);
             }
+            altimeter_publisher_.publish(alt_msg);
+            previous_time = header.stamp.toSec();
         }
-
     }
 }
 
