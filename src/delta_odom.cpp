@@ -32,9 +32,9 @@ namespace delta_odom{
         rand_numb = rand() % 100;
         std::mt19937 engine(rand_numb);
 
-        std::string initialize_node_topic;
-        nh_private_.param<std::string>("initialize_node_topic", initialize_node_topic);
-        std_msgs::Empty::ConstPtr initialize_node = ros::topic::waitForMessage<std_msgs::Empty>(initialize_node_topic, nh_);
+        //std::string initialize_node_topic;
+        //nh_private_.param<std::string>("initialize_node_topic", initialize_node_topic);
+        //std_msgs::Empty::ConstPtr initialize_node = ros::topic::waitForMessage<std_msgs::Empty>(initialize_node_topic, nh_);
 
         pose_stamped_subs_ = nh_.subscribe<geometry_msgs::PoseStamped>("pose_stamped",1 , &deltaOdom::truth_callback, this);
         nav_odom_subs_ = nh_.subscribe<nav_msgs::Odometry>("odom",1 , &deltaOdom::odom_callback, this);
@@ -80,13 +80,13 @@ namespace delta_odom{
     }
 
     void deltaOdom::process_msg(Eigen::Affine3d &optitrack_to_current_pose, std_msgs::Header header) {
-
         if(!initialized_){
             previous_time = header.stamp.toSec();
             optitrack_to_preivous_pose = optitrack_to_current_pose;
             initialized_ = true;
             return;
         }
+		
 
         Eigen::Affine3d delta_pose_odom_optitrack_frame;
         Eigen::Affine3d delta_pose_odom_camera_frame;
