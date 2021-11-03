@@ -24,6 +24,7 @@ namespace delta_odom{
         nh_private_.param<bool>("verify_implementation", verify_implementation, false);
 
         reef_msgs::loadTransform("body_to_camera",body_to_camera);
+        ROS_WARN_STREAM("[VO SIM]:: Body to camera \n" << body_to_camera.matrix());
 
         if(verify_implementation)
             integrated_odom_publisher = nh_.advertise<geometry_msgs::PoseStamped>("integrated_odom",1);
@@ -86,7 +87,6 @@ namespace delta_odom{
             initialized_ = true;
             return;
         }
-		
 
         Eigen::Affine3d delta_pose_odom_optitrack_frame;
         Eigen::Affine3d delta_pose_odom_camera_frame;
