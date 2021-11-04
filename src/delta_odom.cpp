@@ -21,7 +21,7 @@ namespace delta_odom{
         nh_private_.param<double>("update_rate", rate, 20);
         nh_private_.param<double>("position_threshold", position_threshold, 0.25);
         nh_private_.param<double>("yaw_threshold", yaw_threshold, 0.1);
-        nh_private_.param<bool>("verify_implementation", verify_implementation, false);
+        nh_private_.param<bool>("verify_implementation", verify_implementation, true);
 
         reef_msgs::loadTransform("body_to_camera",body_to_camera);
         ROS_WARN_STREAM("[VO SIM]:: Body to camera \n" << body_to_camera.matrix());
@@ -60,8 +60,10 @@ namespace delta_odom{
         tf2::fromMsg(msg->pose, pose_msg);
 
         if(verify_implementation){
-            if(!initialized_)
+            if(!initialized_) {
                 current_pose = pose_msg;
+                current_pose_of_camera = current_pose * body_to_camera;
+            }
         }
 
         process_msg(pose_msg, msg->header);
@@ -93,7 +95,9 @@ namespace delta_odom{
 
         sensor_msgs::Range alt_msg;
         alt_msg.header = header;
-        alt_msg.range = optitrack_to_current_pose.translation().z();
+        alt_msg.max_range = 8.0;
+        alt_msg.min_range = 0.25;
+        alt_msg.range = -1.0 * optitrack_to_current_pose.translation().z();
 
         delta_pose_odom_optitrack_frame= optitrack_to_preivous_pose.inverse() * optitrack_to_current_pose;
         delta_pose_odom_camera_frame = body_to_camera.inverse() * delta_pose_odom_optitrack_frame * body_to_camera;
@@ -107,12 +111,17 @@ namespace delta_odom{
 
             if(verify_implementation){
                 Eigen::Affine3d temp;
-                temp = current_pose * delta_pose_odom_optitrack_frame;
-                current_pose = temp;
+//                temp = current_pose * delta_pose_odom_optitrack_frame;
+//                current_pose = temp;
+                temp = current_pose_of_camera * delta_pose_odom_camera_frame;
+                current_pose_of_camera = temp;
+                current_pose = current_pose_of_camera * body_to_camera.inverse();
+
                 geometry_msgs::PoseStamped verify_msg;
                 verify_msg.pose = tf2::toMsg(current_pose);
                 integrated_odom_publisher.publish(verify_msg);
             }
+
         }
         // Publish the delta_odom value w.r.t keyframe
         if(DT>1/rate) {

@@ -58,6 +58,7 @@ namespace delta_odom{
         Eigen::Affine3d optitrack_to_preivous_pose;
         Eigen::Affine3d body_to_camera;
         Eigen::Affine3d current_pose;
+        Eigen::Affine3d current_pose_of_camera;
         Eigen::Vector3d noise_vector;
 
         int rand_numb;
